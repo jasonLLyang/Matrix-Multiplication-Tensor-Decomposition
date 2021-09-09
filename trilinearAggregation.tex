@@ -1,0 +1,218 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath,amsfonts,amssymb,amsthm}
+\newtheorem{problem}{Problem}
+\newtheorem{lemma}{Lemma}
+\usepackage{harpoon}%
+\usepackage{float}
+\usepackage{verbatim}
+
+\title{Notes on Trilinear Aggregation}
+\author{Jason Yang}
+\date{August 2021}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+
+This paper outlines the notes I have taken while reading the papers ``Strassen's Algorithm is not Optimal / Trilinear Technique of Aggregating, Uniting and Canceling for / Constructing Fast Algorithms for Matrix Operations" (Pan) \begin{verbatim} https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=4567976 \end{verbatim} and "On Practical Algorithms for Accelerated Matrix Multiplication" (Laderman, Pan, Sha) \begin{verbatim} https://www.sciencedirect.com/science/article/pii/002437959290393O \end{verbatim}. These two papers show what is called the \textit{trilinear aggregation} technique of multiplying two moderately-sized matrices together by using as few multiplications as possible. I think they are especially interesting because they aren't well known and aren't mentioned often by other researchers, since more attention has been given to the asymptotically fastest matrix multiplication algorithms. These algorithms are very theoretically interesting, but are incredibly complicated and are only faster than naive matrix multiplication for absurdly large matrices. Therefore, I believe trilinear aggregation deserves more attention if we want to make new fast matrix multiplication algorithms that are actually usable in the real world.
+
+\section{Definitions}
+
+We have matrices $A=[A_{i,j}]_{i,j}$ and $B=[B_{j,k}]_{j,k}$ of size $M\times K$ and $K\times N$ respectively and want to compute the matrix product $C=AB:=[\sum_{j} A_{i,j}B_{j,k}]_{i,k}$ using as few multiplications between elements of $A$ and $B$ as possible. Here, we disregard scalar multiplications, e.g. using the $2A_{i,j}$ has no cost. We also do not care how many additions we make between elements of $A$ and $B$.
+
+The reason we care about reducing the number of multiplications is that the elements of $A$ and $B$ don't have to be just numbers. In particular, they can also be smaller matrices, meaning any procedure for multiplying the elements of $A$ and $B$ immediately yields a divide-and-conquer algorithm for multiplying arbitrary matrices of any size (provided there are base case algorithms for small sizes). It can be shown that if we have way of multiplying a $M\times K$ matrix with a $K\times N$ matrix using $R$ multiplications, then we have a $O(N^{3\log_{MKN} R})$-time algorithm for multiplying two $N\times N$ matrices together. Additions and scalar multiplications become insignificant to the asymptotic time complexity.
+
+The naive algorithm, which comes directly from the definition of the matrix product, requires $MKN$ multiplications and computes two $N\times N$ matrices in $O(N^3)$ time. For $(M,K,N)=(2,2,2)$, however, V. Strassen found a clever algorithm using only 7 multiplications instead of the expected $2*2*2=8$ multiplications. This yielded the first ever sub $O(N^3)$-time algorithm for multiplying two $N\times N$ matrices together, as it runs in $O(N^{log_2 7})=O(N^{\sim 2.807})$ time.
+
+\section{Tensor Representation of Matrix Multiplication}
+
+What is the general form of an algorithm multiplying matrices $A$ and $B$ with few multiplications? Since the matrix product $AB$ only involves terms of the form $ab$ for some element $a$ in $A$ and some element in $B$, it does not make sense to have triple products of the elements of $A$ and $B$, nor to have elements of $A$ and $B$ by themselves, only multiplied with scalars. Thus, all multiplications are of the form $(\sum_{ij}\alpha_{ij}A_{ij})*(\sum_{jk}\beta_{jk}B_{jk})$, i.e. a linear combination of the elements of $A$ multiplied by a linear combination of the elements of $B$.
+
+If we use $R$ multiplications, we can represent the $r$-th product as $P_r=(\sum_{ij}\alpha_{rij}A_{ij})*(\sum_{jk}\beta_{rjk}B_{jk})$, where $\alpha_{rij},\beta_{rjk}$ are scalar coefficients. Then the $(j,k)$-th element of the matrix product $C_{jk}=(AB)_{jk}=\sum_{j}A_{ij}B_{jk}$ must be obtainable as a linear combination of the products $P_r$, i.e. $C_{jk}=\sum_{r}\gamma_{rki}P_{r}$ for coefficients $\gamma_{rki}$ (we use $\gamma_{rki}$ and not $\gamma_{rik})$ because that way the resulting matrix multiplication tensor we will define shortly will have more symmetry). Plugging in the definitions of $C_{jk}$ and $P_r$ yields $\sum_{j}A_{ij}B_{jk}=\sum_{r}\gamma_{rki}(\sum_{ij}\alpha_{rij}A_{ij})*(\sum_{jk}\beta_{rjk}B_{jk})$. If we want the coefficients of $\alpha,\beta,\gamma$ to make this equation valid for any matrices $A,B$, then we obtain the so-called \textit{Brent equations}:
+
+\[\sum_{r=0}^{R-1} \alpha_{ri_0j_0}\beta_{rj_1k_1}\gamma_{rk_2i_2}=\begin{cases}
+1 & j_0=j_1 \wedge k_1=k_2 \wedge i_2=i_0 \\
+0 & \texttt{else} \\
+\end{cases}\]
+
+\textbf{Any set of coefficients of $\alpha,\beta,\gamma$ that satisfies this system of equations describes a valid algorithm for multiplying a $M\times K$ matrix with a $K\times N$ matrix using only $R$ multiplications between matrix elements}.
+
+We can rewrite this system of equations as a tensor equation. A \textit{tensor} for our purposes is a $n$-dimensional array $A_{i_0,\dots i_{n-1}}$. Additionally, define the \textit{outer product} of two tensors $A,B$ of dimensions $n,m$ respectively to be the $(n+m)$-dimensional tensor $A\times B$ s.t. $(A\times B)_{i_0,\dots i_{n-1},j_0,\dots j_{m-1}}=A_{i_0,\dots i_{n-1}}B_{j_0,\dots j_{m-1}}$. Finally, define the \textit{matrix multiplication tensor} $\mathcal{M}(M,K,N)$ to be the $M\times K\times K\times N\times N\times M$ tensor s.t. the element at coordinate $(i_0,j_0,j_1,k_1,k_2,i_2)$ is 1 if $j_0=j_1 \wedge k_1=k_2 \wedge i_2=i_0$ and 0 otherwise. Then the Brent equations above are equivalent to the following tensor equation:
+
+\[\sum_{r=0}^{R-1} \alpha_r\times\beta_r\times\gamma_r=\mathcal{M}(M,K,N),\]
+
+where $\alpha_r, \beta_r, \gamma_r$ are the $r$ matrices of $\alpha,\beta,\gamma$ respectively. The minimum $R$ such that the equation can be satisfied is called the \textit{rank} of the tensor $\mathcal{M}(M,K,N)$. Thus, finding a fast matrix multiplication algorithm is equivalent to finding a low-rank decomposition of $\mathcal{M}(M,K,N)$.
+
+\section{Trilinear Aggregation}
+In this section we show Pan's technique of trilinear aggregation, which yielded the first matrix multiplication algorithm asymptotically faster than Strassen's algorithm. We will only consider the case $M=K=N$ (i.e. we will only consider multiplying two $N\times N$ matrices together).
+
+Let $\mathcal{M}(N)=\mathcal{M}(N,N,N)$, $[N]=\{0,\dots N-1\}$, $[N]^3=\{(i,j,k)|i,j,k\in [N]\}$, and $E_{i,j}$ be the $N\times N$ matrix with its element at $(i,j)$ equal to 1 and all other elements equal to 0. Also, for brevity, we will omit the $\times$ symbol when evaluating the outer product between two tensors. Finally, we will refer to a \textit{term} as a set of three matrices that have been combined using the outer product.
+
+The matrix multiplication tensor $\mathcal{M}(N)$ has a trivial $N^3$-rank decomposition:
+
+\[\mathcal{M}(N)=\sum_{(i,j,k)\in [N]^3}E_{i,j}E_{j,k}E_{k,i}.\]
+
+Notice that we can define a bijection $(i,j,k)\Longleftrightarrow E_{i,j}E_{j,k}E_{k,i}$ between the elements of $[N]^3$ and the terms in the trivial decomposition.
+
+Pan's technique starts by organizing the terms of the trivial decomposition into groups of 3 as follows:
+
+\[\mathcal{M}(N)=(\sum_{(i,j,k)\in S}E_{i,j}E_{j,k}E_{k,i}+E_{j,k}E_{k,i}E_{i,j}+E_{k,i}E_{i,j}E_{j,k})+(\sum_{i\in [N]} E_{i,i}E_{i,i}E_{i,i}).\]
+
+Here we define a set $S\in [N]^3$ s.t. $\cup_{(i,j,k)\in S}\{(i,j,k),(j,k,i),(k,i,j)\}=[N]^3\setminus\{(i,i,i)|i\in [N]\}$ and the sets $S$, $\{(j,k,i)|(i,j,k)\in S\}$, and $\{(k,i,j)|(i,j,k)\in S\}$ are mutually disjoint. Thus, $|S|=\frac{N^3-N}{3}$. The terms $E_{i,i}E_{i,i}E_{i,i}$ must be treated separately.
+
+Next, we replace $\sum_{(i,j,k)\in S}E_{i,j}E_{j,k}E_{k,i}+E_{j,k}E_{k,i}E_{i,j}+E_{k,i}E_{i,j}E_{j,k}$ with $\sum_{i,j,k}(E_{i,j}+E_{j,k}+E_{k,i})(E_{j,k}+E_{k,i}+E_{i,j})(E_{k,i}+E_{i,j}+E_{j,k})$. With this method, we generate all the terms $E_{i,j}E_{j,k}E_{k,i}, E_{j,k}E_{k,i}E_{i,j}, E_{k,i}E_{i,j}E_{j,k}$ using only $\frac{N^3-N}{3}$ terms instead of $N^3-N$ terms, a big improvement. However, we also generate several unwanted terms in the process.
+
+The final step is to remove these unwanted terms. We can use the distributive law to our advantage to remove most of these terms with only $O(N^2)$ terms. For example, consider removing terms of the form $E_{i,j}E_{i,j}E_{j,k}$: instead of calculating $\sum_{(i,j,k)\in S} E_{i,j}E_{i,j}E_{j,k}$ naively, we can rewrite it as $\sum_{i,j\in [N]}E_{i,j}E_{i,j}(\sum_{k|(i,j,k)\in S}E_{j,k})$, which only takes $N^2$ terms instead of $\frac{N^3-N}{3}$. We will call such terms \textit{intermediate terms}, as together they can be removed using only $O(N^2)$ terms. In general, any $E_aE_bE_c$ where each $a,b,c$ represents a pair of indices is an intermediate term if $a,b,c$ are not all mutually distinct. We will initially ignore the details of actually removing the intermediate terms and talk about them later. For now, we have the following:
+
+\begin{comment}
+We will define the sets $S_{IJ},S_{JK},S_{KI}$ to be $\{(i,j)|(i,j,k)\in S\},\{(j,k)|(i,j,k)\in S\},\{(k,i)|(i,j,k)\in S\}$.
+\end{comment}
+
+\[\sum_{(i,j,k)\in S}E_{i,j}E_{j,k}E_{k,i}+E_{j,k}E_{k,i}E_{i,j}+E_{k,i}E_{i,j}E_{j,k}\]
+\begin{comment}
+\[=\sum_{(i,j,k)\in S}\Big[(E_{i,j}+E_{j,k}+E_{k,i})(E_{j,k}+E_{k,i}+E_{i,j})(E_{k,i}+E_{i,j}+E_{j,k})\]
+\[-E_{i,j}E_{i,j}(E_{k,i}+E_{i,j}+E_{j,k})-E_{j,k}E_{j,k}(E_{k,i}+E_{i,j}+E_{j,k})-E_{k,i}E_{k,i}(E_{k,i}+E_{i,j}+E_{j,k})\]
+\[-E_{i,j}(E_{j,k}+E_{k,i}E_{i,j}-E_{j,k}(E_{i,j}+E_{k,i})E_{j,k}-E_{k,i}(E_{i,j}+E_{j,k})E_{k,i}\]
+\[-(E_{j,k}+E_{k,i})E_{i,j}E_{i,j}-(E_{i,j}+E_{k,i})E_{j,k}E_{j,k}-(E_{i,j}+E_{j,k})E_{k,i}E_{k,i}\]
+\[-E_{i,j}E_{k,i}E_{j,k}-E_{j,k}E_{i,j}E_{k,i}-E_{k,i}E_{j,k}E_{i,j}\Big]\]
+\end{comment}
+
+\[=\sum_{(i,j,k)\in S}(E_{i,j}+E_{j,k}+E_{k,i})(E_{j,k}+E_{k,i}+E_{i,j})(E_{k,i}+E_{i,j}+E_{j,k})\]
+\begin{comment}
+\[-\sum_{(i,j)\in S_{IJ}}E_{i,j}E_{i,j}(\sum_k^*E_{k,i}+E_{i,j}+E_{j,k})\]
+\[-\sum_{(j,k)\in S_{JK}}E_{j,k}E_{j,k}(\sum_i^*E_{k,i}+E_{i,j}+E_{j,k})\]
+\[-\sum_{(k,i)\in S_{KI}}E_{k,i}E_{k,i}(\sum_j^*E_{k,i}+E_{i,j}+E_{j,k})\]
+\[-\sum_{(i,j)\in S_{IJ}}E_{i,j}(\sum_k^*E_{j,k}+E_{k,i})E_{i,j}\]
+\[-\sum_{(j,k)\in S_{JK}}E_{j,k}(\sum_i^*E_{i,j}+E_{k,i})E_{j,k}\]
+\[-\sum_{(k,i)\in S_{KI}}E_{k,i}(\sum_j^*E_{i,j}+E_{j,k})E_{k,i}\]
+\[-\sum_{(i,j)\in S_{IJ}}(\sum_k^*E_{j,k}+E_{k,i})E_{i,j}E_{i,j}\]
+\[-\sum_{(j,k)\in S_{JK}}(\sum_i^*E_{i,j}+E_{k,i})E_{j,k}E_{j,k}\]
+\[-\sum_{(k,i)\in S_{KI}}(\sum_j^*E_{i,j}+E_{j,k})E_{k,i}E_{k,i}\]
+\end{comment}
+\[-\Big[ O(N^2) \texttt{many terms}\Big]\]
+\[-\Big(\sum_{(i,j,k)\in S}E_{i,j}E_{k,i}E_{j,k}+E_{j,k}E_{i,j}E_{k,i}+E_{k,i}E_{j,k}E_{i,j}\Big),\]
+
+\begin{comment}
+where $\sum_i^*,\sum_j^*,\sum_K^*$ are short for $\sum_{i|(i,j,k)\in S},\sum_{j|(i,j,k)\in S},\sum_{k|(i,j,k)\in S}$ respectively. 
+\end{comment}
+
+We will call the terms $(E_{i,j}+E_{j,k}+E_{k,i})(E_{j,k}+E_{k,i}+E_{i,j})(E_{k,i}+E_{i,j}+E_{j,k})$ the \textit{aggregation terms} and the terms $E_{i,j}E_{k,i}E_{j,k}, E_{j,k}E_{i,j}E_{k,i}, E_{k,i}E_{j,k}E_{i,j}$ \textit{unacceptable terms}, as they cannot be easily evaluated with only $O(N^2)$ terms.
+
+We can summarize the above long equation with an \textit{aggregation table}:
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{c|c|c}
+        $ij$ & $jk$ & $ki$ \\
+        $jk$ & $ki$ & $ij$ \\
+        $ki$ & $ij$ & $jk$ \\
+    \end{tabular}
+    \label{group1}
+    \caption{}
+\end{table}
+
+In the aggregation table, each entry represents a matrix $E_{i,j}$; the letter $E$ has simply been omitted for brevity. Then our target terms correspond to the sum of the products of the rows, our aggregation term corresponds to the product of the sum of the columns, and our unacceptable terms come from the lists of coordinates $[(0,0),(1,1),(2,2]$, $[(1,0),(2,1),(0,2)]$, and $[(2,0),(0,1),(1,2)]$. In this specific table, the unnecceptable terms can be written as $ijkijk,jkijki,kijij$.
+
+To eliminate the unacceptable terms, Pan uses a clever trick: expand all matrices $E_{i,j}$ to size $2N\times 2N$ and evaluate the tensor $\mathcal{M}(2N)$ instead of $\mathcal{M}(N)$. To retain the restriction $(i,j,k)\in S$, we can represent the trivial decomposition of $\mathcal{M}(2N)$ as follows:
+
+\[\sum_{a,b,c\in [2]}\Big[\Big(\sum_{(i,j,k)\in S}E_{i+aN,j+bN}E_{j+bN,k+cN}E_{k+cN,i+aN}\]\[+E_{j+bN,k+cN}E_{k+cN,i+aN}E_{i+aN,j+bN}\]\[+E_{k+cN,i+aN}E_{i+aN,j+bN}E_{j+bN,k+cN}\Big)\]\[+\Big(\sum_{i\in [N]} E_{i+aN,i+bN}E_{i+bN,i+cN}E_{i+cN,i+aN}\Big)\Big].\]
+
+Now, the trilinear aggregation technique involves organizing the 24 terms $E_{i+aN,j+bN}E_{j+bN,k+cN}E_{k+cN,i+aN}$, $E_{j+bN,k+cN}E_{k+cN,i+aN}E_{i+aN,j+bN}$, and\\ $E_{k+cN,i+aN}E_{i+aN,j+bN}E_{j+bN,k+cN} \forall a,b,c\in [2]$ and for fixed $i,j,k$ into 8 groups of 3, where each group is replaced with an aggregation term and a set of intermediate terms, such that the unacceptable terms from each of the groups cancel each other out.
+
+To accomplish this, let us abbreviate the expressions $i+N,j+N,k+N$ as $\bar{i},\bar{j},\bar{k}$ respectively. The first group is described by Table 1 above and generates the unacceptable terms $E_{i,j}E_{k,i}E_{j,k},E_{j,k}E_{i,j}E_{k,i},E_{k,i}E_{j,k}E_{i,j}$, which we will abbreviate as $ijkijk,jkijki,kijkij$. Let's try removing $ijkijk$ with our second group. We will need to add a negative sign:
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{c|c|c}
+        $-ij$ & $j?$ & $-?i$ \\
+        $?k$ & $ki$ & $i?$ \\
+        $k?$ & $?j$ & $jk$ \\
+    \end{tabular}
+\end{table}
+
+In the above table, we already know partial information about the elements not on the main diagonal, since each row must form a valid target term. For example, $ij\bar{j}kki$ is invalid. In general, any target term must be of the form $abbcca$, where each occurrence of the same letter represents the same index.
+
+We also need to add a second negative sign in the first row to counteract the initial negative sign we added to cancel out $ijkijk$. To match Pan's solution, we arbitrarily place this negative sign at the rightmost column. Finally, we must have each of the rows evaluate to new target terms we have not already evaluated, e.g. we cannot set the first row of Table 2 to $-ij|jk|-ki$ since that would simply create the target term $ijjkki$ that we already got from Table 1. This constraint forces our new table to be:
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{c|c|c}
+        $-ij$ & $j\bar{k}$ & $-\bar{k}i$ \\
+        $\bar{j}k$ & $ki$ & $i\bar{j}$ \\
+        $k\bar{i}$ & $\bar{i}j$ & $jk$ \\
+    \end{tabular}
+    \caption{}
+\end{table}
+
+What this table means is that we calculate the aggregation terms $\sum_{(i,j,k)\in S}(-E_{i,j}+E_{\bar{j},k}+E_{k,\bar{i}})(E_{j,\bar{k}}+E_{k,i}+E_{\bar{i},j})(-E_{\bar{k},j}+E_{i,\bar{j}}+E_{j,k})$ and remove the resulting intermediate terms.
+
+We continue in this fashion, cancelling out $jkijki$ with Table 3 and $kijkij$ with Table 4:
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{c|c|c}
+        $i\bar{j}$ & $\bar{j}k$ & $ki$ \\
+        $-jk$ & $k\bar{i}$ & $-\bar{i}j$ \\
+        $\bar{k}i$ & $ij$ & $j\bar{k}$ \\
+    \end{tabular}
+    \caption{}
+\end{table}
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{c|c|c}
+        $\bar{i}j$ & $jk$ & $k\bar{i}$ \\
+        $j\bar{k}$ & $\bar{k}i$ & $ij$ \\
+        $-ki$ & $i\bar{j}$ & $-\bar{j}k$ \\
+    \end{tabular}
+    \caption{}
+\end{table}
+
+Now, we have cancelled all unacceptable terms generated by Table 1, but we have also created new unacceptable terms $i\bar{j}k\bar{i}j\bar{k}$,$j\bar{k}i\bar{j}k\bar{i}$,$k\bar{i}j\bar{k}i\bar{j}$,$-\bar{i}j\bar{k}i\bar{j}k$,$-\bar{j}k\bar{i}j\bar{k}i$,\\$-\bar{k}i\bar{j}k\bar{i}j$ from Tables 2-4. To eliminate these terms, we simply duplicate Tables 1-4 and swap the bar variables with no-bar variables; the unacceptable terms generated from these new tables will perfectly cancel out our current unacceptable terms:
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{c|c|c}
+        $\bar{i}\bar{j}$ & $\bar{j}\bar{k}$ & $\bar{k}\bar{i}$ \\
+        $\bar{j}\bar{k}$ & $\bar{k}\bar{i}$ & $\bar{i}\bar{j}$ \\
+        $\bar{k}\bar{i}$ & $\bar{i}\bar{j}$ & $\bar{j}\bar{k}$ \\
+    \end{tabular}
+    \caption{}
+\end{table}
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{c|c|c}
+        $-i\bar{j}$ & $\bar{j}k$ & $-k\bar{i}$ \\
+        $j\bar{k}$ & $\bar{k}\bar{i}$ & $\bar{i}j$ \\
+        $\bar{k}i$ & $i\bar{j}$ & $\bar{j}\bar{k}$ \\
+    \end{tabular}
+    \caption{}
+\end{table}
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{c|c|c}
+        $\bar{i}j$ & $j\bar{k}$ & $\bar{k}\bar{i}$ \\
+        $-\bar{j}\bar{k}$ & $\bar{k}i$ & $-i\bar{j}$ \\
+        $k\bar{i}$ & $\bar{i}\bar{j}$ & $\bar{j}k$ \\
+    \end{tabular}
+    \caption{}
+\end{table}
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{c|c|c}
+        $i\bar{j}$ & $\bar{j}\bar{k}$ & $\bar{k}i$ \\
+        $\bar{j}k$ & $k\bar{i}$ & $\bar{i}\bar{j}$ \\
+        $-\bar{k}\bar{i}$ & $\bar{i}j$ & $-j\bar{k}$ \\
+    \end{tabular}
+    \caption{}
+\end{table}
+
+Thus, we have a way of decomposing the tensor $\mathcal{M}(2N)$ into $8(\frac{N^3-N}{3})+O(N^2)+8N$ terms instead of $8N^3$ terms with the trivial decomposition. The $8N$ terms from calculating $\sum_{a,b,c\in [2]}\sum_{i\in [N]} E_{i+aN,i+bN}E_{i+bN,i+cN}E_{i+cN,i+aN}$ can be improved to $7N$ terms using Strassen's algorithm.
+
+\end{document}
